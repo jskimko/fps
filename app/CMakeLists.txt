@@ -1,13 +1,13 @@
-add_executable(example-bin
+add_executable(fps-bin
     main.cc
 )
 
-set_target_properties(example-bin
+set_target_properties(fps-bin
     PROPERTIES
-        OUTPUT_NAME example
+        OUTPUT_NAME fps
 )
 
-target_link_libraries(example-bin
+target_link_libraries(fps-bin
     PRIVATE
-        example-lib
+        fps-lib
 )

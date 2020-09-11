@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 
-project(example
+project(fps
         VERSION 0.1.0
         LANGUAGES CXX)
 

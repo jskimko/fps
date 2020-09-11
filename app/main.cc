@@ -1,8 +1,8 @@
 #include <cstdio>
-#include "example.hh"
+#include "fps/fps.hh"
 
 int main(int argc, char *argv[]) {
-    foo();
+    fps::foo();
 
     return 0;
 }

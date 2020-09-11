@@ -1,13 +1,13 @@
-add_library(example-lib
-    example.cc
+add_library(fps-lib
+    fps.cc
 )
 
-set_target_properties(example-lib
+set_target_properties(fps-lib
     PROPERTIES
-        OUTPUT_NAME example
+        OUTPUT_NAME fps
 )
 
-target_include_directories(example-lib
+target_include_directories(fps-lib
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
