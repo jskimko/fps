@@ -1,2 +1,2 @@
-# cmake-template
-A template for cmake projects.
+# fps
+A frame interpolation software.
