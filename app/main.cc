@@ -1,7 +1,7 @@
+#include "fps/fps.hh"
+
 #include <cstdio>
 #include <sys/stat.h>
-
-#include "fps/fps.hh"
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
@@ -22,37 +22,39 @@ int main(int argc, char *argv[]) {
     // open input file.
     fps::Context ctx(in_name);
 
+    // i/o.
+    fps::Reader reader(ctx);
+    //fps::Writer writer(out_name);
+
     // find streams and codecs.
-    fps::Codec video_codec(ctx, fps::MediaType::VIDEO);
-    fps::Codec audio_codec(ctx, fps::MediaType::AUDIO);
+    fps::Decoder video_decoder(ctx, fps::MediaType::VIDEO);
+    fps::Decoder audio_decoder(ctx, fps::MediaType::AUDIO);
+    fps::Encoder video_encoder(ctx, video_decoder, fps::MediaType::VIDEO);
+    //fps::Encoder audio_encoder(audio_decoder, fps::MediaType::AUDIO);
 
     // allocate buffers.
-    fps::Processor proc(ctx);
+    fps::Frame frame;
+    fps::Packet input;
+    fps::Packet output;
 
-//    // read packets (compressed).
-//    while ((rc = av_read_frame(fmt_ctx, pkt)) == 0) {
-//        if (pkt->stream_index == video_stream_idx) {
-//            rc = process(video_ctx, pkt, frame);
-//
-//        } else if (pkt->stream_index == audio_stream_idx) {
-//            rc = process(audio_ctx, pkt, frame);
-//        }
-//        av_packet_unref(pkt);
-//        if (rc < 0) { break; }
-//    }
+    while (auto p_in = reader.read_into(input)) {
+        if (video_decoder.decode(p_in)) {
+            while (auto f = video_decoder.read_into(frame)) {
+                printf("@@ frame %ld\n", f->pts);
+
+                if (!video_encoder.encode(f)) { break; }
+                while (auto p_out = video_encoder.read_into(output)) {
+                    printf("@@ packet %ld\n", p_out->pts);
+                    //writer.write(p_out);
+                }
+            }
+        } else if (audio_decoder.decode(p_in)) {
+        }
+    }
 
     return 0;
 }
 
-//int process(AVCodecContext *ctx, AVPacket *pkt, AVFrame *frame) {
-//    int rc = 0;
-//
-//    // send packet to context.
-//    if ((rc = avcodec_send_packet(ctx, pkt)) < 0) {
-//        fprintf(stderr, "error: avcodec_send_packet: could not send packet to decoder\n");
-//        return rc;
-//    }
-//
 //    // get frames.
 //    // avcodec_receive_frame calls av_frame_unref automatically.
 //    while ((rc = avcodec_receive_frame(ctx, frame)) == 0) {

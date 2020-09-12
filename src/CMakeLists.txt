@@ -16,6 +16,6 @@ target_include_directories(fps-lib
 )
 
 target_link_libraries(fps-lib
-    PRIVATE
+    PUBLIC
         ffmpeg-avformat
 )
