@@ -10,5 +10,4 @@ set_target_properties(fps-bin
 target_link_libraries(fps-bin
     PRIVATE
         fps-lib
-        ffmpeg-avformat
 )

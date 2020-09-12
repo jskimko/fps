@@ -14,3 +14,8 @@ target_include_directories(fps-lib
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src
 )
+
+target_link_libraries(fps-lib
+    PRIVATE
+        ffmpeg-avformat
+)
