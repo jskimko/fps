@@ -133,10 +133,22 @@ Encoder(Context &ctx, Decoder &decoder, MediaType type)
         throw std::runtime_error("avcodec_alloc_context3");
     }
 
-    context->width = decoder.context->width;
-    context->height = decoder.context->height;
-    context->time_base = ctx.context->streams[decoder.stream_idx]->time_base;
-    context->pix_fmt = decoder.context->pix_fmt;
+    switch (type) {
+        case MediaType::VIDEO:
+            context->width = decoder.context->width;
+            context->height = decoder.context->height;
+            context->time_base = ctx.context->streams[decoder.stream_idx]->time_base;
+            context->pix_fmt = decoder.context->pix_fmt;
+            break;
+        case MediaType::AUDIO:
+            context->time_base = ctx.context->streams[decoder.stream_idx]->time_base;
+            context->sample_fmt = decoder.context->sample_fmt;
+            context->sample_rate = decoder.context->sample_rate;
+            context->channel_layout = decoder.context->channel_layout;
+            break;
+        default:
+            throw std::runtime_error("unsupported MediaType");
+    }
 
     if (avcodec_open2(context, codec, nullptr) < 0) {
         throw std::runtime_error("avcodec_open2");

@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
     fps::Decoder video_decoder(ctx, fps::MediaType::VIDEO);
     fps::Decoder audio_decoder(ctx, fps::MediaType::AUDIO);
     fps::Encoder video_encoder(ctx, video_decoder, fps::MediaType::VIDEO);
-    //fps::Encoder audio_encoder(audio_decoder, fps::MediaType::AUDIO);
+    fps::Encoder audio_encoder(ctx, audio_decoder, fps::MediaType::AUDIO);
 
     // allocate buffers.
     fps::Frame frame;
@@ -54,26 +54,3 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
-
-//    // get frames.
-//    // avcodec_receive_frame calls av_frame_unref automatically.
-//    while ((rc = avcodec_receive_frame(ctx, frame)) == 0) {
-//        printf("@@ pts bets %ld %ld\n", frame->pts, frame->best_effort_timestamp);
-//
-//        // encode frame.
-//        if ((rc = avcodec_send_frame(ctx, frame)) < 0) {
-//            fprintf(stderr, "error: avcodec_send_frame\n");
-//            break;
-//        }
-//
-//        // get packet.
-//        while ((rc = avcodec_receive_packet(ctx, pkt)) == 0) {
-//        }
-//
-//    }
-//
-//    // unref the last frame.
-//    av_frame_unref(frame);
-//
-//    return rc;
-//}
