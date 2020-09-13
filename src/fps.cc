@@ -4,6 +4,7 @@
 
 extern "C" {
 #include <libavformat/avformat.h>
+#include <libavutil/timestamp.h>
 }
 
 #include "fps/fps.hh"
@@ -22,7 +23,7 @@ Context(std::string name, ContextType type)
     switch (type) {
         case ContextType::INPUT:
             if (avformat_open_input(&context, fname.c_str(), nullptr, nullptr) < 0) {
-                throw std::runtime_error("avformat_open_input");
+                throw std::runtime_error("avformat_open_input: " + fname);
             }
 
             if (avformat_find_stream_info(context, nullptr) < 0) {
@@ -35,7 +36,7 @@ Context(std::string name, ContextType type)
                 avformat_alloc_output_context2(&context, NULL, "mpeg", fname.c_str());
             }
             if (!context) {
-                throw std::runtime_error("avformat_alloc_output_context2");
+                throw std::runtime_error("avformat_alloc_output_context2: " + fname);
             }
             break;
         default:
@@ -47,7 +48,7 @@ Context(std::string name, ContextType type)
 Context::
 ~Context()
 {
-    avformat_close_input(&context);
+    if (context) { avformat_close_input(&context); }
 }
 
 //--------//
@@ -83,17 +84,10 @@ Writer(Context const &ctx, Encoder const &ve, Encoder const &ae)
     auto *fmt = ctx.context->oformat;
     if (fmt->video_codec != AV_CODEC_ID_NONE) {
         add_stream(&video_stream, video_encoder);
-        add_frame();
-        if (avcodec_parameters_from_context(video_stream->codecpar, video_encoder.context) < 0) {
-            throw std::runtime_error("avcodec_parameters_from_context");
-        }
     }
 
     if (fmt->audio_codec != AV_CODEC_ID_NONE) {
         add_stream(&audio_stream, audio_encoder);
-        if (avcodec_parameters_from_context(audio_stream->codecpar, audio_encoder.context) < 0) {
-            throw std::runtime_error("avcodec_parameters_from_context");
-        }
     }
 
     if (!(context.context->oformat->flags & AVFMT_NOFILE)) {
@@ -123,45 +117,42 @@ add_stream(AVStream **stream, Encoder const &encoder)
     }
     (*stream)->id = context.context->nb_streams-1;
     (*stream)->time_base = encoder.context->time_base;
-}
 
-void
-Writer::
-add_frame()
-{
-    frame = av_frame_alloc();
-    if (!frame) { 
-        throw std::runtime_error("av_frame_alloc");
-    }
-
-    frame->format = video_encoder.context->pix_fmt;
-    frame->width = video_encoder.context->width;
-    frame->height = video_encoder.context->height;
-
-    if (av_frame_get_buffer(frame, 0) < 0) {
-        throw std::runtime_error("av_frame_get_buffer");
+    if (avcodec_parameters_from_context((*stream)->codecpar, encoder.context) < 0) {
+        throw std::runtime_error("avcodec_parameters_from_context");
     }
 }
 
 bool
 Writer::
-write(Packet &packet) const
+write(Packet &packet, MediaType type) const
 {
     AVStream *stream = nullptr;
     AVCodecContext *codec_ctx = nullptr;
 
-    if (packet.get()->stream_index == video_stream->index) {
+    if (type == MediaType::VIDEO) {
         stream = video_stream;
         codec_ctx = video_encoder.context;
-    } else if (packet.get()->stream_index == audio_stream->index) {
-        stream = video_stream;
+    } else if (type == MediaType::AUDIO) {
         stream = audio_stream;
         codec_ctx = audio_encoder.context;
     } else {
-        return false;
+        throw std::runtime_error("unsupported MediaType");
     }
 
     av_packet_rescale_ts(packet.get(), codec_ctx->time_base, stream->time_base);
+    packet.get()->stream_index = stream->index;
+
+    auto *pkt = packet.get();
+    auto *time_base = &context.context->streams[stream->index]->time_base;
+    char b1[16], b2[16], b3[16], b4[16], b5[16], b6[16];
+    av_ts_make_string(b1, pkt->pts); av_ts_make_time_string(b2, pkt->pts, time_base);
+    av_ts_make_string(b3, pkt->dts); av_ts_make_time_string(b4, pkt->dts, time_base);
+    av_ts_make_string(b5, pkt->duration); av_ts_make_time_string(b6, pkt->duration, time_base);
+
+    fprintf(stderr, "pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
+            b1, b2, b3, b4, b5, b6, pkt->stream_index);
+
     return av_interleaved_write_frame(context.context, packet.get()) == 0;
 }
 
@@ -187,10 +178,10 @@ Codec::
 Decoder::
 Decoder(Context &ctx, MediaType type)
     : Codec(),
-      stream_idx(-1)
+      stream_index(-1)
 {
-    stream_idx = av_find_best_stream(ctx.context, (AVMediaType) type, -1, -1, &codec, 0);
-    if (stream_idx < 0) {
+    stream_index = av_find_best_stream(ctx.context, (AVMediaType) type, -1, -1, &codec, 0);
+    if (stream_index < 0) {
         throw std::runtime_error("av_find_best_stream");
     }
 
@@ -199,7 +190,7 @@ Decoder(Context &ctx, MediaType type)
         throw std::runtime_error("avcodec_alloc_context3");
     }
 
-    if (avcodec_parameters_to_context(context, ctx.context->streams[stream_idx]->codecpar) < 0) {
+    if (avcodec_parameters_to_context(context, ctx.context->streams[stream_index]->codecpar) < 0) {
         throw std::runtime_error("avcodec_parameters_to_context");
     }
 
@@ -212,7 +203,7 @@ bool
 Decoder::
 decode(Packet &packet)
 {
-    if (packet.get()->stream_index != stream_idx) { return false; }
+    if (packet.get()->stream_index != stream_index) { return false; }
     return avcodec_send_packet(context, packet.get()) == 0;
 }
 
@@ -243,15 +234,15 @@ Encoder(Context &ctx, Decoder &decoder, MediaType type)
         throw std::runtime_error("avcodec_alloc_context3");
     }
 
+    context->time_base = ctx.context->streams[decoder.stream_index]->time_base;
+
     switch (type) {
         case MediaType::VIDEO:
             context->width = decoder.context->width;
             context->height = decoder.context->height;
-            context->time_base = ctx.context->streams[decoder.stream_idx]->time_base;
             context->pix_fmt = decoder.context->pix_fmt;
             break;
         case MediaType::AUDIO:
-            context->time_base = ctx.context->streams[decoder.stream_idx]->time_base;
             context->sample_fmt = decoder.context->sample_fmt;
             context->sample_rate = decoder.context->sample_rate;
             context->channel_layout = decoder.context->channel_layout;

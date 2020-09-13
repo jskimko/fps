@@ -59,18 +59,16 @@ public:
     Writer(Context const &ctx, Encoder const &video_encoder, Encoder const &audio_encoder);
     ~Writer();
 
-    bool write(Packet &packet) const;
+    bool write(Packet &packet, MediaType type) const;
 
 private:
     void add_stream(AVStream **stream, Encoder const &encoder);
-    void add_frame();
 
     Context const &context;
     Encoder const &video_encoder;
     Encoder const &audio_encoder;
     AVStream *video_stream;
     AVStream *audio_stream;
-    AVFrame *frame;
 };
 
 class Codec {
@@ -89,7 +87,7 @@ public:
     bool decode(Packet &packet);
     Unref<Frame> read_into(Frame &frame) const;
 
-    int stream_idx;
+    int stream_index;
 };
 
 class Encoder : public Codec {
