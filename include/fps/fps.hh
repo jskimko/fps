@@ -40,6 +40,8 @@ public:
     Context(std::string fname, ContextType type);
     ~Context();
 
+    void copy_metadata(Context const &ctx);
+
     std::string fname;
     AVFormatContext *context;
 };
@@ -72,12 +74,16 @@ private:
 };
 
 class Codec {
-public:
+protected:
     Codec();
     ~Codec();
 
+    void open();
+
+public:
     AVCodec *codec;
     AVCodecContext *context;
+
 };
 
 class Decoder : public Codec {

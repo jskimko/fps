@@ -51,6 +51,13 @@ Context::
     if (context) { avformat_close_input(&context); }
 }
 
+void
+Context::
+copy_metadata(Context const &ctx)
+{
+    av_dict_copy(&context->metadata, ctx.context->metadata, 0);
+}
+
 //--------//
 // Reader //
 //--------//
@@ -105,6 +112,7 @@ Writer::
 ~Writer()
 {
     av_write_trailer(context.context);
+    if (context.context->pb) { avio_closep(&context.context->pb); }
 }
 
 void
@@ -143,16 +151,6 @@ write(Packet &packet, MediaType type) const
     av_packet_rescale_ts(packet.get(), codec_ctx->time_base, stream->time_base);
     packet.get()->stream_index = stream->index;
 
-    auto *pkt = packet.get();
-    auto *time_base = &context.context->streams[stream->index]->time_base;
-    char b1[16], b2[16], b3[16], b4[16], b5[16], b6[16];
-    av_ts_make_string(b1, pkt->pts); av_ts_make_time_string(b2, pkt->pts, time_base);
-    av_ts_make_string(b3, pkt->dts); av_ts_make_time_string(b4, pkt->dts, time_base);
-    av_ts_make_string(b5, pkt->duration); av_ts_make_time_string(b6, pkt->duration, time_base);
-
-    fprintf(stderr, "pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
-            b1, b2, b3, b4, b5, b6, pkt->stream_index);
-
     return av_interleaved_write_frame(context.context, packet.get()) == 0;
 }
 
@@ -170,6 +168,15 @@ Codec::
 ~Codec()
 {
     if (context) { avcodec_free_context(&context); }
+}
+
+void
+Codec::
+open()
+{
+    if (avcodec_open2(context, codec, nullptr) < 0) {
+        throw std::runtime_error("avcodec_open2");
+    }
 }
 
 //---------//
@@ -194,9 +201,7 @@ Decoder(Context &ctx, MediaType type)
         throw std::runtime_error("avcodec_parameters_to_context");
     }
 
-    if (avcodec_open2(context, codec, nullptr) < 0) {
-        throw std::runtime_error("avcodec_open2");
-    }
+    open();
 }
 
 bool
@@ -235,25 +240,28 @@ Encoder(Context &ctx, Decoder &decoder, MediaType type)
     }
 
     context->time_base = ctx.context->streams[decoder.stream_index]->time_base;
+    context->bit_rate = decoder.context->bit_rate;
 
     switch (type) {
         case MediaType::VIDEO:
             context->width = decoder.context->width;
             context->height = decoder.context->height;
             context->pix_fmt = decoder.context->pix_fmt;
+            context->framerate = decoder.context->framerate;
+            context->gop_size = decoder.context->gop_size;
+            context->max_b_frames = decoder.context->max_b_frames;
             break;
         case MediaType::AUDIO:
             context->sample_fmt = decoder.context->sample_fmt;
             context->sample_rate = decoder.context->sample_rate;
             context->channel_layout = decoder.context->channel_layout;
+            context->channels = decoder.context->channels;
             break;
         default:
             throw std::runtime_error("unsupported MediaType");
     }
 
-    if (avcodec_open2(context, codec, nullptr) < 0) {
-        throw std::runtime_error("avcodec_open2");
-    }
+    open();
 }
 
 bool

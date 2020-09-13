@@ -17,6 +17,7 @@ int main(int argc, char *argv[]) {
     // contexts.
     fps::Context ctx_in(name_in, fps::ContextType::INPUT);
     fps::Context ctx_out(name_out, fps::ContextType::OUTPUT);
+    ctx_out.copy_metadata(ctx_in);
 
     // codecs.
     fps::Decoder video_decoder(ctx_in, fps::MediaType::VIDEO);
@@ -54,7 +55,7 @@ int main(int argc, char *argv[]) {
     }
 
     } catch (std::exception &e) {
-        fprintf(stderr, "%s\n", e.what());
+        fprintf(stderr, "%s: error: %s\n", argv[0], e.what());
         return 1;
     }
 
