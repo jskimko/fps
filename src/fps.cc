@@ -15,16 +15,31 @@ namespace fps {
 // Context //
 //---------//
 Context::
-Context(std::string name)
+Context(std::string name, ContextType type)
     : fname(std::move(name)),
       context(nullptr)
 {
-    if (avformat_open_input(&context, fname.c_str(), nullptr, nullptr) < 0) {
-        throw std::runtime_error("avformat_open_input");
-    }
+    switch (type) {
+        case ContextType::INPUT:
+            if (avformat_open_input(&context, fname.c_str(), nullptr, nullptr) < 0) {
+                throw std::runtime_error("avformat_open_input");
+            }
 
-    if (avformat_find_stream_info(context, nullptr) < 0) {
-        throw std::runtime_error("avformat_find_stream_info");
+            if (avformat_find_stream_info(context, nullptr) < 0) {
+                throw std::runtime_error("avformat_find_stream_info");
+            }
+            break;
+        case ContextType::OUTPUT:
+            avformat_alloc_output_context2(&context, nullptr, nullptr, fname.c_str());
+            if (!context) {
+                avformat_alloc_output_context2(&context, NULL, "mpeg", fname.c_str());
+            }
+            if (!context) {
+                throw std::runtime_error("avformat_alloc_output_context2");
+            }
+            break;
+        default:
+            throw std::runtime_error("unsupported ContextType");
     }
 }
 
@@ -52,6 +67,102 @@ read_into(Packet &packet) const
         return {nullptr, nullptr};
     }
     return {&packet, &av_packet_unref};
+}
+
+//--------//
+// Writer //
+//--------//
+Writer::
+Writer(Context const &ctx, Encoder const &ve, Encoder const &ae)
+    : context(ctx),
+      video_encoder(ve),
+      audio_encoder(ae),
+      video_stream(nullptr),
+      audio_stream(nullptr)
+{
+    auto *fmt = ctx.context->oformat;
+    if (fmt->video_codec != AV_CODEC_ID_NONE) {
+        add_stream(&video_stream, video_encoder);
+        add_frame();
+        if (avcodec_parameters_from_context(video_stream->codecpar, video_encoder.context) < 0) {
+            throw std::runtime_error("avcodec_parameters_from_context");
+        }
+    }
+
+    if (fmt->audio_codec != AV_CODEC_ID_NONE) {
+        add_stream(&audio_stream, audio_encoder);
+        if (avcodec_parameters_from_context(audio_stream->codecpar, audio_encoder.context) < 0) {
+            throw std::runtime_error("avcodec_parameters_from_context");
+        }
+    }
+
+    if (!(context.context->oformat->flags & AVFMT_NOFILE)) {
+        if (avio_open(&context.context->pb, context.fname.c_str(), AVIO_FLAG_WRITE) < 0) {
+            throw std::runtime_error("avio_open");
+        }
+    }
+
+    if (avformat_write_header(context.context, nullptr) < 0) {
+        throw std::runtime_error("avformat_write_header");
+    }
+}
+
+Writer::
+~Writer()
+{
+    av_write_trailer(context.context);
+}
+
+void
+Writer::
+add_stream(AVStream **stream, Encoder const &encoder)
+{
+    *stream = avformat_new_stream(context.context, nullptr);
+    if (!*stream) {
+        throw std::runtime_error("avformat_new_stream");
+    }
+    (*stream)->id = context.context->nb_streams-1;
+    (*stream)->time_base = encoder.context->time_base;
+}
+
+void
+Writer::
+add_frame()
+{
+    frame = av_frame_alloc();
+    if (!frame) { 
+        throw std::runtime_error("av_frame_alloc");
+    }
+
+    frame->format = video_encoder.context->pix_fmt;
+    frame->width = video_encoder.context->width;
+    frame->height = video_encoder.context->height;
+
+    if (av_frame_get_buffer(frame, 0) < 0) {
+        throw std::runtime_error("av_frame_get_buffer");
+    }
+}
+
+bool
+Writer::
+write(Packet &packet) const
+{
+    AVStream *stream = nullptr;
+    AVCodecContext *codec_ctx = nullptr;
+
+    if (packet.get()->stream_index == video_stream->index) {
+        stream = video_stream;
+        codec_ctx = video_encoder.context;
+    } else if (packet.get()->stream_index == audio_stream->index) {
+        stream = video_stream;
+        stream = audio_stream;
+        codec_ctx = audio_encoder.context;
+    } else {
+        return false;
+    }
+
+    av_packet_rescale_ts(packet.get(), codec_ctx->time_base, stream->time_base);
+    return av_interleaved_write_frame(context.context, packet.get()) == 0;
 }
 
 //-------//
@@ -120,8 +231,7 @@ read_into(Frame &frame) const
 //---------//
 Encoder::
 Encoder(Context &ctx, Decoder &decoder, MediaType type)
-    : Codec(),
-      stream(nullptr)
+    : Codec()
 {
     codec = avcodec_find_encoder(decoder.context->codec_id);
     if (!codec) {

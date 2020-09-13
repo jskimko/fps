@@ -9,34 +9,36 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    const char *in_name = argv[1];
-    const char *out_name = argv[2];
+    const char *name_in = argv[1];
+    const char *name_out = argv[2];
 
     // check if input file exists.
     struct stat buf;
-    if (stat(in_name, &buf) != 0) {
-        fprintf(stderr, "error: stat: could not find file '%s'\n", in_name);
+    if (stat(name_in, &buf) != 0) {
+        fprintf(stderr, "error: stat: could not find file '%s'\n", name_in);
         return 1;
     }
 
-    // open input file.
-    fps::Context ctx(in_name);
-
-    // i/o.
-    fps::Reader reader(ctx);
-    //fps::Writer writer(out_name);
+    // get contexts.
+    fps::Context ctx_in(name_in, fps::ContextType::INPUT);
+    fps::Context ctx_out(name_out, fps::ContextType::OUTPUT);
 
     // find streams and codecs.
-    fps::Decoder video_decoder(ctx, fps::MediaType::VIDEO);
-    fps::Decoder audio_decoder(ctx, fps::MediaType::AUDIO);
-    fps::Encoder video_encoder(ctx, video_decoder, fps::MediaType::VIDEO);
-    fps::Encoder audio_encoder(ctx, audio_decoder, fps::MediaType::AUDIO);
+    fps::Decoder video_decoder(ctx_in, fps::MediaType::VIDEO);
+    fps::Decoder audio_decoder(ctx_in, fps::MediaType::AUDIO);
+    fps::Encoder video_encoder(ctx_in, video_decoder, fps::MediaType::VIDEO);
+    fps::Encoder audio_encoder(ctx_in, audio_decoder, fps::MediaType::AUDIO);
+
+    // i/o.
+    fps::Reader reader(ctx_in);
+    fps::Writer writer(ctx_out, video_encoder, audio_encoder);
 
     // allocate buffers.
     fps::Frame frame;
     fps::Packet input;
     fps::Packet output;
 
+    // read data.
     while (auto p_in = reader.read_into(input)) {
         if (video_decoder.decode(p_in)) {
             while (auto f = video_decoder.read_into(frame)) {
@@ -45,8 +47,9 @@ int main(int argc, char *argv[]) {
                 if (!video_encoder.encode(f)) { break; }
                 while (auto p_out = video_encoder.read_into(output)) {
                     printf("@@ packet %ld\n", p_out->pts);
-                    //writer.write(p_out);
+                    writer.write(p_out);
                 }
+
             }
         } else if (audio_decoder.decode(p_in)) {
         }

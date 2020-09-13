@@ -11,10 +11,11 @@ extern "C" {
 namespace fps {
 
 // forward declarations.
+enum class ContextType;
 enum class MediaType;
 class Context;
 class Reader;
-//class Writer;
+class Writer;
 class Decoder;
 class Encoder;
 class Packet;
@@ -24,45 +25,65 @@ template <typename T> class Unref;
 
 // definitions.
 
+enum class ContextType {
+    INPUT,
+    OUTPUT
+};
+
 enum class MediaType {
     VIDEO = AVMEDIA_TYPE_VIDEO,
     AUDIO = AVMEDIA_TYPE_AUDIO
 };
 
-struct Context {
-    Context(std::string fname);
+class Context {
+public:
+    Context(std::string fname, ContextType type);
     ~Context();
 
     std::string fname;
     AVFormatContext *context;
 };
 
-struct Reader {
+class Reader {
+public:
     Reader(Context const &context);
 
     Unref<Packet> read_into(Packet &packet) const;
 
+private:
     Context const &context;
 };
 
-//class Writer {
-//public:
-//    Writer(Context const &context);
-//
-//    Context const &context;
-//};
+class Writer {
+public:
+    Writer(Context const &ctx, Encoder const &video_encoder, Encoder const &audio_encoder);
+    ~Writer();
+
+    bool write(Packet &packet) const;
+
+private:
+    void add_stream(AVStream **stream, Encoder const &encoder);
+    void add_frame();
+
+    Context const &context;
+    Encoder const &video_encoder;
+    Encoder const &audio_encoder;
+    AVStream *video_stream;
+    AVStream *audio_stream;
+    AVFrame *frame;
+};
 
 class Codec {
-protected:
+public:
     Codec();
     ~Codec();
 
-public:
     AVCodec *codec;
     AVCodecContext *context;
 };
 
-struct Decoder : public Codec {
+class Decoder : public Codec {
+public:
     Decoder(Context &ctx, MediaType type);
 
     bool decode(Packet &packet);
@@ -71,13 +92,12 @@ struct Decoder : public Codec {
     int stream_idx;
 };
 
-struct Encoder : public Codec {
+class Encoder : public Codec {
+public:
     Encoder(Context &ctx, Decoder &decoder, MediaType type);
 
     bool encode(Frame &frame);
     Unref<Packet> read_into(Packet &packet) const;
-
-    AVStream *stream;
 };
 
 
@@ -92,18 +112,21 @@ protected:
     T *ptr;
 };
 
-struct Packet : public Buffer<AVPacket> {
+class Packet : public Buffer<AVPacket> {
+public:
     Packet();
     ~Packet();
 };
 
-struct Frame : public Buffer<AVFrame> {
+class Frame : public Buffer<AVFrame> {
+public:
     Frame();
     ~Frame();
 };
 
 template <typename Buf>
-struct Unref {
+class Unref {
+public:
     Unref(Buf *b, std::function<void(typename Buf::type*)> f) 
         : buf(b), unref(std::move(f)) {}
     ~Unref() { if (buf && buf->get()) unref(buf->get()); }
@@ -114,6 +137,7 @@ struct Unref {
 
     Buf &get() const { return *buf; }
 
+private:
     Buf *buf;
     std::function<void(typename Buf::type*)> unref;
 };
