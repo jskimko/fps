@@ -31,24 +31,46 @@ int main(int argc, char *argv[]) {
 
     // allocate buffers.
     fps::Frame frame;
+    fps::Frame prev;
     fps::Packet input;
     fps::Packet video_output;
     fps::Packet audio_output;
+
+    // common encoding logic.
+    auto encode = [&writer](fps::Encoder &encoder, 
+                            fps::Packet &packet,
+                            fps::Frame &frame,
+                            fps::MediaType type) {
+        if (!encoder.encode(frame)) { return false; }
+        while (auto p_out = encoder.read_into(packet)) {
+            writer.write(p_out, type);
+        }
+        return true;
+    };
 
     // read data.
     while (auto p_in = reader.read_into(input)) {
         if (video_decoder.decode(p_in)) {
             while (auto f = video_decoder.read_into(frame)) {
-                if (!video_encoder.encode(f)) { break; }
-                while (auto p_out = video_encoder.read_into(video_output)) {
-                    writer.write(p_out, fps::MediaType::VIDEO);
+
+                if (prev.is_valid()) {
+                    int n = 0;
+                    auto interp_frames = fps::Interpolator::linear(prev, frame, n);
+
+                    for (auto &interp_frame : interp_frames) {
+                        encode(video_encoder, video_output, interp_frame, fps::MediaType::VIDEO);
+                    }
+                }
+                prev.copy_from(frame);
+
+                if (!encode(video_encoder, video_output, f, fps::MediaType::VIDEO)) {
+                    break;
                 }
             }
         } else if (audio_decoder.decode(p_in)) {
             while (auto f = audio_decoder.read_into(frame)) {
-                if (!audio_encoder.encode(f)) { break; }
-                while (auto p_out = audio_encoder.read_into(audio_output)) {
-                    writer.write(p_out, fps::MediaType::AUDIO);
+                if (!encode(audio_encoder, audio_output, f, fps::MediaType::AUDIO)) {
+                    break;
                 }
             }
         }

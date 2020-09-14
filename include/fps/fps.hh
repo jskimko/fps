@@ -6,7 +6,10 @@ extern "C" {
 }
 
 #include <string>
+#include <vector>
 #include <functional>
+#include <algorithm>
+#include <type_traits>
 
 namespace fps {
 
@@ -126,6 +129,9 @@ class Frame : public Buffer<AVFrame> {
 public:
     Frame();
     ~Frame();
+
+    bool is_valid() const;
+    void copy_from(Frame const &frame);
 };
 
 template <typename Buf>
@@ -144,6 +150,47 @@ public:
 private:
     Buf *buf;
     std::function<void(typename Buf::type*)> unref;
+};
+
+class Interpolator {
+public:
+    static std::vector<Frame> linear(Frame const &prev, Frame const &cur, int n) {
+        std::vector<Frame> ret(n);
+        auto pts_step = (prev.get()->pts < cur.get()->pts)
+                      ? (cur.get()->pts - prev.get()->pts) / (n + 1)
+                      : (prev.get()->pts - cur.get()->pts) / (n + 1);
+
+        for (int i=0; i<n; i++) {
+            ret[i].copy_from(prev);
+            Frame &frame = ret[i];
+            frame.get()->pts += pts_step * (i + 1);
+
+            int len = sizeof(cur.get()->data) / sizeof(cur.get()->data[0]);
+            for (int j=0; j<len; j++) {
+                auto *plane_prev = prev.get()->data[j];
+                auto *plane_cur  = cur.get()->data[j];
+                auto *plane_dst  = frame.get()->data[j];
+                auto linesize = cur.get()->linesize[j];
+
+                if (!plane_prev || !plane_cur || !plane_dst) { continue; }
+
+                using data_t = std::remove_reference<decltype(plane_dst[0])>::type;
+                std::transform(&plane_prev[0], &plane_prev[linesize],
+                               &plane_cur[0], &plane_dst[0],
+                               [i, n](data_t a, data_t b) -> data_t {
+                                   if (a == b) {
+                                       return a;
+                                   } else if (a < b) {
+                                       return a + (b - a) / (n + 1) * (i + 1);
+                                   } else {
+                                       return b + (a - b) / (n + 1) * (i + 1);
+                                   }
+                               }
+                );
+            }
+        }
+        return ret;
+    }
 };
 
 }

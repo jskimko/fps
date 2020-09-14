@@ -1,10 +1,9 @@
 #include <cstdio>
-#include <cstdlib>
 #include <stdexcept>
+#include <cstring>
 
 extern "C" {
 #include <libavformat/avformat.h>
-#include <libavutil/timestamp.h>
 }
 
 #include "fps/fps.hh"
@@ -315,6 +314,21 @@ Frame::
 ~Frame()
 {
     av_frame_free(&ptr);
+}
+
+bool 
+Frame::
+is_valid() const
+{
+    return ptr->data[0];
+}
+
+void
+Frame::
+copy_from(Frame const &frame)
+{
+    if (ptr) { av_frame_free(&ptr); }
+    ptr = av_frame_clone(frame.ptr);
 }
 
 } // namespace fps
