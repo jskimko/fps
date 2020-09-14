@@ -1,5 +1,8 @@
 add_library(fps-lib
-    fps.cc
+    context.cc
+    codec.cc
+    buffer.cc
+    io.cc
 )
 
 set_target_properties(fps-lib
