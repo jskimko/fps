@@ -154,11 +154,18 @@ private:
 
 class Interpolator {
 public:
-    static std::vector<Frame> linear(Frame const &prev, Frame const &cur, int n) {
+    Interpolator(unsigned long s) : step(s) {}
+
+    std::vector<Frame> linear(Frame const &prev, Frame const &cur) {
+        auto pts_diff = (prev.get()->pts < cur.get()->pts)
+                      ? cur.get()->pts - prev.get()->pts
+                      : prev.get()->pts - cur.get()->pts;
+        auto n = pts_diff / step;
+        auto pts_step = pts_diff / (n + 1);
+
+        total += n;
+
         std::vector<Frame> ret(n);
-        auto pts_step = (prev.get()->pts < cur.get()->pts)
-                      ? (cur.get()->pts - prev.get()->pts) / (n + 1)
-                      : (prev.get()->pts - cur.get()->pts) / (n + 1);
 
         for (int i=0; i<n; i++) {
             ret[i].copy_from(prev);
@@ -191,6 +198,9 @@ public:
         }
         return ret;
     }
+
+    unsigned long step;
+    unsigned long total;
 };
 
 }

@@ -4,15 +4,25 @@
 #include <stdexcept>
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "usage: %s input output\n", argv[0]);
+    try {
+
+    // parse arguments.
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s input output [fps]\n", argv[0]);
         return 1;
     }
 
     const char *name_in = argv[1];
     const char *name_out = argv[2];
 
-    try {
+    int fps = 60;
+    if (argc == 4) {
+        fps = std::stoi(argv[3]);
+        if (fps < 1) {
+            fprintf(stderr, "error: desired fps must be greater than 1\n");
+            return 1;
+        }
+    }
 
     // contexts.
     fps::Context ctx_in(name_in, fps::ContextType::INPUT);
@@ -48,20 +58,24 @@ int main(int argc, char *argv[]) {
         return true;
     };
 
+    // interpolator.
+    auto tbps = video_encoder.context->time_base.den / video_encoder.context->time_base.num;
+    auto pts_step = tbps / fps;
+    fps::Interpolator interpolator(pts_step);
+
     // read data.
     while (auto p_in = reader.read_into(input)) {
         if (video_decoder.decode(p_in)) {
             while (auto f = video_decoder.read_into(frame)) {
-
                 if (prev.is_valid()) {
-                    int n = 0;
-                    auto interp_frames = fps::Interpolator::linear(prev, frame, n);
+                    auto interp_frames = interpolator.linear(prev, f);
 
                     for (auto &interp_frame : interp_frames) {
                         encode(video_encoder, video_output, interp_frame, fps::MediaType::VIDEO);
                     }
+
                 }
-                prev.copy_from(frame);
+                prev.copy_from(f);
 
                 if (!encode(video_encoder, video_output, f, fps::MediaType::VIDEO)) {
                     break;
@@ -75,6 +89,8 @@ int main(int argc, char *argv[]) {
             }
         }
     }
+
+    printf("%s: interpolated %lu frames\n", argv[0], interpolator.total);
 
     } catch (std::exception &e) {
         fprintf(stderr, "%s: error: %s\n", argv[0], e.what());
